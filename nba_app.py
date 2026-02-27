@@ -1,88 +1,131 @@
 import streamlit as st
 import pandas as pd
+from nba_api.stats.endpoints import leaguedashplayerstats, scoreboardv2
+import time
 
-st.set_page_config(page_title="NBA Oracle 27/02", layout="wide")
+# --- 1. CONFIGURAZIONE APP ---
+st.set_page_config(page_title="NBA Oracle Ultimate", layout="wide", initial_sidebar_state="expanded")
 
-st.title("🏀 NBA Oracle: Programma Completo Stanotte")
-st.write("Venerdì 27 Febbraio 2026 - Orari Italiani e Statistiche Sofascore")
+# --- 2. MOTORE DI RICERCA DATI (Aggiornamento automatico ogni ora) ---
+# Il parametro ttl=3600 fa aggiornare l'app da sola ogni 60 minuti
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_nba_data():
+    try:
+        # A. Scarica TUTTI i giocatori della stagione (Medie a partita)
+        player_stats = leaguedashplayerstats.LeagueDashPlayerStats(per_mode_detailed='PerGame').get_data_frames()[0]
+        
+        # Pulizia e traduzione colonne
+        df_players = player_stats[['PLAYER_NAME', 'TEAM_ID', 'TEAM_ABBREVIATION', 'MIN', 'PTS', 'AST', 'REB', 'FG3M']]
+        df_players = df_players.rename(columns={
+            'PLAYER_NAME': 'Giocatore', 'TEAM_ABBREVIATION': 'Squadra', 
+            'MIN': 'Minuti', 'PTS': 'Punti', 'AST': 'Assist', 'REB': 'Rimbalzi', 'FG3M': 'Triple'
+        })
+        # Teniamo solo chi gioca in media più di 10 minuti (via le riserve inutili)
+        df_players = df_players[df_players['Minuti'] > 10.0].sort_values(by='Punti', ascending=False)
+        
+        # Algoritmo Base per i Pronostici Automatici
+        def genera_pronostico(row):
+            if row['Punti'] > 25: return "🔥 OVER Punti"
+            elif row['Assist'] > 8: return "🎯 OVER Assist"
+            elif row['Rimbalzi'] > 10: return "🧱 OVER Rimbalzi"
+            elif row['Triple'] >= 3: return "💦 OVER Triple"
+            else: return "⚖️ Linea Neutra"
+            
+        df_players['Pronostico'] = df_players.apply(genera_pronostico, axis=1)
 
-def crea_match(squadra_casa, casa_data, squadra_trasferta, trasf_data, orario):
-    st.divider()
-    st.header(f"🏟️ {squadra_trasferta} @ {squadra_casa}")
-    st.subheader(f"⏰ Ore: {orario} (ITA)")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown(f"### {squadra_casa}")
-        df_casa = pd.DataFrame(casa_data)
-        df_casa['P+A+R'] = df_casa['Punti'] + df_casa['Assist'] + df_casa['Rimbalzi']
-        st.table(df_casa)
-    with c2:
-        st.markdown(f"### {squadra_trasferta}")
-        df_trasf = pd.DataFrame(trasf_data)
-        df_trasf['P+A+R'] = df_trasf['Punti'] + df_trasf['Assist'] + df_trasf['Rimbalzi']
-        st.table(df_trasf)
+        # B. Scarica le partite di OGGI
+        games = scoreboardv2.ScoreboardV2().get_data_frames()[0]
+        
+        # Estrae l'abbreviazione della squadra dal GAMECODE (es. 20260227/LALDEN -> LAL e DEN)
+        def get_teams(gamecode):
+            teams_part = gamecode.split('/')[1]
+            return teams_part[:3], teams_part[3:]
 
-# --- PROGRAMMA REALE DI STANOTTE ---
+        partite_oggi = []
+        for index, row in games.iterrows():
+            away, home = get_teams(row['GAMECODE'])
+            orario_usa = row['GAME_STATUS_TEXT'] # La NBA fornisce l'orario USA qui
+            partite_oggi.append({'Casa': home, 'Trasferta': away, 'Orario_USA': orario_usa})
+            
+        return df_players, partite_oggi
+    except Exception as e:
+        return None, None
 
-# 1. ORLANDO @ DETROIT (01:00)
-crea_match("Detroit Pistons", {
-    "Giocatore": ["C. Cunningham", "J. Ivey"], "Punti": [22.8, 18.5], "Assist": [7.5, 4.2], "Rimbalzi": [4.1, 3.8], "3PT": [2.1, 1.8], "Pronostico": ["OVER P"]
-}, "Orlando Magic", {
-    "Giocatore": ["P. Banchero", "F. Wagner"], "Punti": [23.5, 20.8], "Assist": [5.2, 4.0], "Rimbalzi": [7.1, 5.5], "3PT": [1.5, 2.0], "Pronostico": ["OVER R"]
-}, "01:00")
+# --- CARICAMENTO DATI ---
+with st.spinner("Connessione ai server NBA in corso... (potrebbe richiedere 1 minuto al primo avvio)"):
+    df_totale, partite = get_nba_data()
 
-# 2. WASHINGTON @ ATLANTA (01:30)
-crea_match("Atlanta Hawks", {
-    "Giocatore": ["Trae Young", "J. Johnson"], "Punti": [26.4, 19.1], "Assist": [10.8, 3.5], "Rimbalzi": [2.8, 8.7], "3PT": [3.4, 1.2], "Pronostico": ["OVER A"]
-}, "Washington Wizards", {
-    "Giocatore": ["Kyle Kuzma", "Jordan Poole"], "Punti": [21.5, 17.2], "Assist": [4.1, 3.9], "Rimbalzi": [6.5, 2.6], "3PT": [2.3, 2.5], "Pronostico": ["UNDER"]
-}, "01:30")
+# --- 3. NAVIGAZIONE LATERALE ---
+st.sidebar.image("https://cdn.nba.com/logos/leagues/logo-nba.svg", width=150)
+st.sidebar.title("Navigazione")
+sezione = st.sidebar.radio("Scegli la pagina:", ["🔥 Partite di Oggi", "📊 Database Completo Stagione"])
 
-# 3. PHILADELPHIA @ TORONTO (01:30)
-crea_match("Toronto Raptors", {
-    "Giocatore": ["RJ Barrett", "S. Barnes"], "Punti": [21.2, 20.1], "Assist": [4.5, 6.0], "Rimbalzi": [5.1, 8.5], "3PT": [1.8, 1.1], "Pronostico": ["OVER P"]
-}, "Philadelphia 76ers", {
-    "Giocatore": ["Tyrese Maxey", "Paul George"], "Punti": [25.8, 22.5], "Assist": [6.4, 5.1], "Rimbalzi": [3.5, 5.8], "3PT": [3.2, 3.5], "Pronostico": ["OVER 3PT"]
-}, "01:30")
+st.sidebar.divider()
+st.sidebar.info("🔄 Dati live ufficiali NBA. Si aggiornano automaticamente ogni 60 minuti.")
+if st.sidebar.button("Forza Aggiornamento Ora"):
+    get_nba_data.clear()
+    st.rerun()
 
-# 4. CHARLOTTE @ NEW YORK (01:30)
-crea_match("New York Knicks", {
-    "Giocatore": ["Jalen Brunson", "K. Towns"], "Punti": [27.5, 21.8], "Assist": [6.8, 2.5], "Rimbalzi": [3.6, 11.5], "3PT": [2.7, 2.2], "Pronostico": ["OVER P"]
-}, "Charlotte Hornets", {
-    "Giocatore": ["LaMelo Ball", "B. Miller"], "Punti": [24.1, 19.5], "Assist": [8.2, 3.8], "Rimbalzi": [5.3, 4.2], "3PT": [3.8, 2.6], "Pronostico": ["OVER 3PT"]
-}, "01:30")
+# =====================================================================
+# PAGINA 1: PARTITE DI OGGI E SQUADRE
+# =====================================================================
+if sezione == "🔥 Partite di Oggi":
+    st.title("🏀 Programma e Matchup di Stanotte")
+    
+    if df_totale is None or partite is None:
+        st.error("I server NBA sono temporaneamente irraggiungibili o l'API è in blocco protettivo. Clicca 'Forza Aggiornamento Ora' nella barra laterale tra un paio di minuti.")
+    elif len(partite) == 0:
+        st.warning("Nessuna partita in programma per oggi secondo i server NBA.")
+    else:
+        st.write("Le tabelle mostrano i migliori 6 giocatori per squadra in base ai punti medi.")
+        
+        for p in partite:
+            st.divider()
+            st.header(f"🏟️ {p['Trasferta']} @ {p['Casa']}")
+            st.subheader(f"Status/Orario USA: {p['Orario_USA']}")
+            
+            c1, c2 = st.columns(2)
+            
+            # Tabella Squadra in Trasferta
+            with c1:
+                st.markdown(f"### ✈️ {p['Trasferta']}")
+                df_trasf = df_totale[df_totale['Squadra'] == p['Trasferta']].head(6) # Prende i top 6
+                # Mostriamo una versione pulita della tabella
+                st.dataframe(df_trasf[['Giocatore', 'Punti', 'Assist', 'Rimbalzi', 'Triple', 'Pronostico']], hide_index=True)
+                
+            # Tabella Squadra in Casa
+            with c2:
+                st.markdown(f"### 🏠 {p['Casa']}")
+                df_casa = df_totale[df_totale['Squadra'] == p['Casa']].head(6)
+                st.dataframe(df_casa[['Giocatore', 'Punti', 'Assist', 'Rimbalzi', 'Triple', 'Pronostico']], hide_index=True)
 
-# 5. SACRAMENTO @ CLEVELAND (01:30)
-crea_match("Cleveland Cavaliers", {
-    "Giocatore": ["D. Mitchell", "D. Garland"], "Punti": [27.8, 19.5], "Assist": [5.5, 7.1], "Rimbalzi": [5.2, 2.8], "3PT": [3.4, 2.5], "Pronostico": ["OVER P"]
-}, "Sacramento Kings", {
-    "Giocatore": ["D. Fox", "D. Sabonis"], "Punti": [26.8, 19.8], "Assist": [5.8, 8.2], "Rimbalzi": [4.5, 13.1], "3PT": [2.8, 0.5], "Pronostico": ["OVER R"]
-}, "01:30")
-
-# 6. CHICAGO @ NEW ORLEANS (02:00)
-crea_match("New Orleans Pelicans", {
-    "Giocatore": ["Zion Williamson", "BI Ingram"], "Punti": [23.1, 21.5], "Assist": [5.0, 5.8], "Rimbalzi": [5.8, 5.1], "3PT": [0.1, 2.1], "Pronostico": ["OVER P"]
-}, "Chicago Bulls", {
-    "Giocatore": ["Zach LaVine", "Coby White"], "Punti": [20.5, 19.1], "Assist": [4.2, 5.2], "Rimbalzi": [4.8, 4.5], "3PT": [2.8, 3.1], "Pronostico": ["OVER 3PT"]
-}, "02:00")
-
-# 7. HOUSTON @ MINNESOTA (02:00)
-crea_match("Minnesota Timberwolves", {
-    "Giocatore": ["Anthony Edwards", "Julius Randle"], "Punti": [28.2, 21.5], "Assist": [5.5, 4.8], "Rimbalzi": [5.2, 9.1], "3PT": [3.2, 1.8], "Pronostico": ["OVER P"]
-}, "Houston Rockets", {
-    "Giocatore": ["Jalen Green", "Alperen Sengun"], "Punti": [20.8, 21.1], "Assist": [3.5, 5.2], "Rimbalzi": [4.5, 9.8], "3PT": [2.5, 0.2], "Pronostico": ["OVER R"]
-}, "02:00")
-
-# 8. GOLDEN STATE @ UTAH (03:00)
-crea_match("Utah Jazz", {
-    "Giocatore": ["Lauri Markkanen", "C. Sexton"], "Punti": [22.5, 18.2], "Assist": [2.1, 4.8], "Rimbalzi": [8.2, 2.5], "3PT": [3.1, 1.5], "Pronostico": ["OVER P"]
-}, "Golden State Warriors", {
-    "Giocatore": ["Stephen Curry", "B. Hield"], "Punti": [26.5, 17.5], "Assist": [6.2, 2.5], "Rimbalzi": [4.5, 3.2], "3PT": [4.8, 3.8], "Pronostico": ["OVER 3PT"]
-}, "03:00")
-
-# 9. DALLAS @ PHOENIX (04:00)
-crea_match("Phoenix Suns", {
-    "Giocatore": ["Kevin Durant", "Devin Booker"], "Punti": [27.5, 26.8], "Assist": [5.2, 6.8], "Rimbalzi": [6.5, 4.8], "3PT": [2.3, 2.4], "Pronostico": ["OVER P"]
-}, "Dallas Mavericks", {
-    "Giocatore": ["Luka Doncic", "Kyrie Irving"], "Punti": [33.8, 25.4], "Assist": [9.5, 5.1], "Rimbalzi": [9.1, 5.0], "3PT": [4.0, 3.1], "Pronostico": ["OVER P+A"]
-}, "04:00")
+# =====================================================================
+# PAGINA 2: DATABASE COMPLETO
+# =====================================================================
+elif sezione == "📊 Database Completo Stagione":
+    st.title("🗄️ Database Analitico Stagionale")
+    st.write("Esplora e filtra TUTTI i giocatori della NBA della stagione in corso.")
+    
+    if df_totale is not None:
+        # Filtri dinamici
+        col_f1, col_f2, col_f3 = st.columns(3)
+        with col_f1:
+            squadra_cercata = st.selectbox("Filtra per Squadra:", ["Tutte"] + sorted(df_totale['Squadra'].unique().tolist()))
+        with col_f2:
+            min_punti = st.slider("Punti minimi a partita:", 0.0, 35.0, 0.0, 0.5)
+        with col_f3:
+            cerca_nome = st.text_input("Cerca Giocatore (es. Curry):")
+            
+        # Applicazione Filtri
+        df_filtrato = df_totale.copy()
+        if squadra_cercata != "Tutte":
+            df_filtrato = df_filtrato[df_filtrato['Squadra'] == squadra_cercata]
+        if min_punti > 0:
+            df_filtrato = df_filtrato[df_filtrato['Punti'] >= min_punti]
+        if cerca_nome:
+            df_filtrato = df_filtrato[df_filtrato['Giocatore'].str.contains(cerca_nome, case=False)]
+            
+        # Mostra tabella gigante
+        st.dataframe(df_filtrato, use_container_width=True, height=600)
+    else:
+        st.error("Dati non disponibili. I server NBA non rispondono.")
