@@ -22,8 +22,17 @@ def get_daily_data():
     # 2. Recupera tutti i giocatori
     players = commonallplayers(is_only_current_season=1).get_data_frames()[0]
     return board, players[['DISPLAY_FIRST_LAST', 'PERSON_ID', 'TEAM_ABBREVIATION']]
-
-games_today, all_players = get_daily_data()
+@st.cache_data(ttl=3600)
+def get_daily_data():
+    try:
+        # Aggiungiamo un piccolo timeout per non far crashare l'app
+        from nba_api.stats.endpoints import commonallplayers
+        from nba_api.stats.static import teams
+        players = commonallplayers(is_only_current_season=1).get_data_frames()[0]
+        return players
+    except Exception as e:
+        st.error("L'API NBA è lenta. Ricarica la pagina tra 10 secondi.")
+        return None
 
 # --- SCHERMATA INIZIALE: TOP 10 PROMETTENTI ---
 st.title("🎯 I 10 Migliori Pick di Oggi")
@@ -83,4 +92,5 @@ if selected_p:
     c2.metric("Media Rimbalzi (Ult. 5)", round(log.head(5)['REB'].mean(), 1))
     c3.metric("Media Assist (Ult. 5)", round(log.head(5)['AST'].mean(), 1))
     
+
     st.plotly_chart(px.line(log.head(10), x='GAME_DATE', y=['PTS', 'REB', 'AST'], title="Trend ultime 10 partite"))
