@@ -1,38 +1,53 @@
 import streamlit as st
 import pandas as pd
 
-# 1. Configurazione Pagina
-st.set_page_config(page_title="NBA Oracle Stats", layout="wide")
+# 1. IMPOSTAZIONI PAGINA
+st.set_page_config(page_title="NBA Oracle PRO", layout="wide")
 
-# 2. Titolo
-st.title("🏀 NBA Oracle: Analisi Giocatori")
+st.title("🏀 NBA Oracle: Analisi Avanzata v4")
 
-# 3. Creazione Dati (Tabella Giocatori)
-# Questi sono i numeri che volevi per confrontare media e linea
-giocatori_data = {
-    "Giocatore": ["G. Antetokounmpo", "L. Doncic", "J. Tatum", "V. Wembanyama", "T. Haliburton"],
-    "Media Punti": [30.8, 33.9, 27.1, 21.4, 20.1],
-    "Linea Scommessa": [29.5, 34.5, 26.5, 22.5, 18.5],
-    "Differenza": [1.3, -0.6, 0.6, -1.1, 1.6],
-    "Suggerimento": ["OVER ✅", "UNDER ❌", "OVER ✅", "UNDER ❌", "OVER ✅"]
+# --- SIDEBAR FILTRI ---
+st.sidebar.header("Filtri Ricerca")
+squadra_scelta = st.sidebar.multiselect(
+    "Seleziona Squadre:",
+    options=["Tutte", "DEN", "DAL", "OKC", "BOS", "MIN", "NYK"],
+    default="Tutte"
+)
+
+# --- PASSO 1 POTENZIATO: DATABASE A 7+ COLONNE ---
+# Qui abbiamo aggiunto: Squadra, Media Punti, Assist, Rimbalzi, Linea, Combo e Consiglio
+nba_data = {
+    "Giocatore": ["N. Jokic", "L. Doncic", "S. Gilgeous-Alexander", "J. Tatum", "A. Edwards", "J. Brunson"],
+    "Squadra": ["DEN", "DAL", "OKC", "BOS", "MIN", "NYK"],
+    "Media Punti": [26.1, 33.9, 31.1, 27.1, 26.3, 27.2],
+    "Media Assist": [9.0, 9.8, 6.4, 4.9, 5.2, 6.5],
+    "Media Rimbalzi": [12.3, 9.2, 5.5, 8.5, 5.4, 3.9],
+    "Linea Bookmaker": [25.5, 34.5, 30.5, 27.5, 25.5, 26.5],
+    "Consiglio": ["OVER ✅", "UNDER ❌", "OVER ✅", "OVER ✅", "OVER ✅", "⚖️ NEUTRO"]
 }
 
-df_giocatori = pd.DataFrame(giocatori_data)
+df = pd.DataFrame(nba_data)
 
-# 4. Visualizzazione Tabella
-st.header("🔥 Player Props di Oggi")
-st.table(df_giocatori)
+# CALCOLO COMBO (Punti + Assist + Rimbalzi) - Questa è la 7° colonna speciale
+df['Combo (P+A+R)'] = df['Media Punti'] + df['Media Assist'] + df['Media Rimbalzi']
+
+# Applichiamo il filtro squadra
+if "Tutte" not in squadra_scelta:
+    df = df[df['Squadra'].isin(squadra_scelta)]
+
+# --- VISUALIZZAZIONE TABELLA ---
+st.header("📊 Tabella Comparativa Completa")
+# Usiamo dataframe per avere una tabella bella grande e scorrevole
+st.dataframe(df, use_container_width=True)
 
 st.divider()
 
-# 5. Tabella Partite
-st.header("📅 Match in Programma")
-partite_data = {
-    "Partita": ["Lakers @ Nuggets", "Celtics @ Knicks", "Warriors @ Suns", "Bucks @ Sixers"],
-    "Orario ITA": ["02:00", "01:30", "04:00", "02:30"],
-    "Totale (O/U)": ["228.5", "222.5", "234.0", "226.5"]
-}
-df_partite = pd.DataFrame(partite_data)
-st.table(df_partite)
-
-st.success("App caricata correttamente! Se vedi questa scritta, il sistema è stabile.")
+# --- SEZIONE INFORTUNI ---
+st.header("🚑 Situazione Infortuni")
+col1, col2 = st.columns(2)
+with col1:
+    st.error("🔴 OUT")
+    st.write("- **Joel Embiid**\n- **Kawhi Leonard**")
+with col2:
+    st.warning("🟡 IN DUBBIO")
+    st.write("- **LeBron James**\n- **Kevin Durant**")
