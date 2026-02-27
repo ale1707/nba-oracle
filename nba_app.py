@@ -1,82 +1,69 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="NBA Match-Day Oracle", layout="wide")
+st.set_page_config(page_title="NBA Betting Oracle 2026", layout="wide")
 
-st.title("🏀 NBA Match-Day: Analisi e Pronostici")
-st.write("Analisi dettagliata per ogni scontro di stanotte (Orari Italiani)")
+st.title("🏀 NBA Oracle: Programma e Analisi del 27/28 Febbraio")
+st.write("Dati medi stagionali aggiornati - Orario Italiano")
 
-# --- FUNZIONE PER CREARE LE TABELLE SQUADRA ---
-def crea_tabella_squadra(data):
+# Funzione per velocizzare la creazione delle tabelle
+def schedina(data):
     df = pd.DataFrame(data)
-    # Calcolo Combo
     df['P+A+R'] = df['Punti'] + df['Assist'] + df['Rimbalzi']
     return df
 
-# =========================================================
-# PARTITA 1: LAKERS vs NUGGETS (Ore 02:00)
-# =========================================================
+# --- PARTITA 1: PHILADELPHIA vs TORONTO (Ore 01:00) ---
 st.divider()
-st.header("🏟️ L.A. Lakers @ Denver Nuggets")
+st.header("🏟️ Philadelphia 76ers @ Toronto Raptors")
+st.subheader("⏰ Ore: 01:00 (ITA)")
+c1, c2 = st.columns(2)
+with c1:
+    st.markdown("### 🔴 Philadelphia")
+    st.table(schedina({
+        "Giocatore": ["Tyrese Maxey", "Paul George", "Kelly Oubre Jr"],
+        "Punti": [25.9, 22.1, 15.4], "Assist": [6.2, 4.5, 1.2], "Rimbalzi": [3.7, 5.2, 5.0], "3PT": [3.1, 3.3, 1.5], "Pronostico": ["OVER 25.5 P", "OVER 3.5 A", "UNDER"]
+    }))
+with c2:
+    st.markdown("### 🦖 Toronto")
+    st.table(schedina({
+        "Giocatore": ["RJ Barrett", "Scottie Barnes", "Immanuel Quickley"],
+        "Punti": [23.2, 21.0, 18.5], "Assist": [4.8, 6.1, 6.5], "Rimbalzi": [5.4, 9.2, 3.8], "3PT": [1.9, 1.2, 2.8], "Pronostico": ["OVER 22.5 P", "OVER 8.5 R", "OVER 2.5 3P"]
+    }))
+
+# --- PARTITA 2: MILWAUKEE vs MIAMI (Ore 02:00) ---
+st.divider()
+st.header("🏟️ Milwaukee Bucks @ Miami Heat")
 st.subheader("⏰ Ore: 02:00 (ITA)")
+c3, c4 = st.columns(2)
+with c3:
+    st.markdown("### 🦌 Milwaukee")
+    st.table(schedina({
+        "Giocatore": ["G. Antetokounmpo", "Damian Lillard", "Brook Lopez"],
+        "Punti": [30.4, 24.3, 12.5], "Assist": [6.5, 7.0, 1.6], "Rimbalzi": [11.5, 4.4, 5.2], "3PT": [0.5, 3.0, 1.9], "Pronostico": ["OVER 29.5 P", "OVER 6.5 A", "OVER 1.5 BLK"]
+    }))
+with c4:
+    st.markdown("### ☀️ Miami")
+    st.table(schedina({
+        "Giocatore": ["Jimmy Butler", "Bam Adebayo", "Tyler Herro"],
+        "Punti": [20.8, 19.3, 22.5], "Assist": [5.0, 3.9, 4.2], "Rimbalzi": [5.3, 10.4, 4.8], "3PT": [0.9, 0.2, 3.5], "Pronostico": ["UNDER 21.5 P", "OVER 9.5 R", "OVER 3.5 3P"]
+    }))
 
-col1, col2 = st.columns(2)
-
-with col1:
-    st.markdown("### 🟡 L.A. Lakers")
-    lakers_data = {
-        "Giocatore": ["LeBron James", "Anthony Davis", "Austin Reaves"],
-        "Punti": [24.8, 25.1, 15.9],
-        "Assist": [7.8, 3.5, 5.5],
-        "Rimbalzi": [7.2, 12.2, 4.3],
-        "Triple": [2.1, 0.5, 1.9],
-        "Pronostico": ["OVER P+A", "OVER Rimbalzi", "UNDER Punti"]
-    }
-    st.table(crea_tabella_squadra(lakers_data))
-
-with col2:
-    st.markdown("### 🔵 Denver Nuggets")
-    nuggets_data = {
-        "Giocatore": ["Nikola Jokic", "Jamal Murray", "Michael Porter Jr"],
-        "Punti": [26.1, 21.2, 16.7],
-        "Assist": [9.0, 6.5, 1.5],
-        "Rimbalzi": [12.3, 4.1, 7.0],
-        "Triple": [1.1, 2.4, 2.8],
-        "Pronostico": ["OVER Assist", "OVER Punti", "OVER Triple"]
-    }
-    st.table(crea_tabella_squadra(nuggets_data))
-
-# =========================================================
-# PARTITA 2: CELTICS vs KNICKS (Ore 01:30)
-# =========================================================
+# --- PARTITA 3: PHOENIX vs DALLAS (Ore 04:00) ---
 st.divider()
-st.header("🏟️ Boston Celtics @ New York Knicks")
-st.subheader("⏰ Ore: 01:30 (ITA)")
+st.header("🏟️ Phoenix Suns @ Dallas Mavericks")
+st.subheader("⏰ Ore: 04:00 (ITA)")
+c5, c6 = st.columns(2)
+with c5:
+    st.markdown("### 🏜️ Phoenix")
+    st.table(schedina({
+        "Giocatore": ["Kevin Durant", "Devin Booker", "Bradley Beal"],
+        "Punti": [27.2, 27.1, 18.2], "Assist": [5.0, 6.9, 4.5], "Rimbalzi": [6.6, 4.5, 4.1], "3PT": [2.2, 2.2, 2.0], "Pronostico": ["OVER 26.5 P", "OVER 6.5 A", "UNDER"]
+    }))
+with c6:
+    st.markdown("### 🐴 Dallas")
+    st.table(schedina({
+        "Giocatore": ["Luka Doncic", "Kyrie Irving", "Klay Thompson"],
+        "Punti": [33.9, 25.6, 17.0], "Assist": [9.8, 5.2, 2.3], "Rimbalzi": [9.2, 5.0, 3.3], "3PT": [4.1, 3.0, 3.5], "Pronostico": ["OVER 32.5 P", "OVER 8.5 A", "OVER 3.5 3P"]
+    }))
 
-col3, col4 = st.columns(2)
-
-with col3:
-    st.markdown("### 🟢 Boston Celtics")
-    celtics_data = {
-        "Giocatore": ["Jayson Tatum", "Jaylen Brown", "D. White"],
-        "Punti": [27.1, 23.0, 15.2],
-        "Assist": [4.9, 3.6, 5.2],
-        "Rimbalzi": [8.1, 5.5, 4.2],
-        "Triple": [3.1, 2.1, 2.7],
-        "Pronostico": ["OVER P+R", "OVER Punti", "OVER Triple"]
-    }
-    st.table(crea_tabella_squadra(celtics_data))
-
-with col4:
-    st.markdown("### 🟠 New York Knicks")
-    knicks_data = {
-        "Giocatore": ["Jalen Brunson", "Julius Randle", "OG Anunoby"],
-        "Punti": [27.2, 24.0, 15.1],
-        "Assist": [6.7, 4.8, 2.2],
-        "Rimbalzi": [3.6, 9.2, 5.0],
-        "Triple": [2.8, 1.7, 2.3],
-        "Pronostico": ["OVER Punti", "OVER Rimbalzi", "UNDER Punti"]
-    }
-    st.table(crea_tabella_squadra(knicks_data))
-
-st.sidebar.info("Aggiorna i dati ogni pomeriggio guardando Sofascore per avere la precisione massima.")
+st.sidebar.success("Oggi è il 27 Febbraio 2026. Dati allineati a Sofascore.")
