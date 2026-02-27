@@ -13,6 +13,7 @@ st.markdown("""
     .stDeployButton {display:none;}
     div[data-testid="stStatusWidget"] {display:none;}
     .team-logo { width: 45px; vertical-align: middle; margin: 0 10px; }
+    .team-logo-small { width: 30px; vertical-align: middle; margin-right: 10px; }
     .match-header { font-size: 24px; font-weight: 800; text-align: center; margin-bottom: 5px; }
     .time-text { font-size: 14px; color: #888; text-align: center; margin-bottom: 20px; }
     .block-container { padding-top: 1rem; padding-bottom: 0rem; padding-left: 1rem; padding-right: 1rem; }
@@ -20,10 +21,22 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Mappatura Abbreviazioni -> Nomi Completi
+TEAM_NAMES = {
+    'ATL': 'Atlanta Hawks', 'BOS': 'Boston Celtics', 'BKN': 'Brooklyn Nets', 'CHA': 'Charlotte Hornets',
+    'CHI': 'Chicago Bulls', 'CLE': 'Cleveland Cavaliers', 'DAL': 'Dallas Mavericks', 'DEN': 'Denver Nuggets',
+    'DET': 'Detroit Pistons', 'GSW': 'Golden State Warriors', 'HOU': 'Houston Rockets', 'IND': 'Indiana Pacers',
+    'LAC': 'LA Clippers', 'LAL': 'Los Angeles Lakers', 'MEM': 'Memphis Grizzlies', 'MIA': 'Miami Heat',
+    'MIL': 'Milwaukee Bucks', 'MIN': 'Minnesota Timberwolves', 'NOP': 'New Orleans Pelicans', 'NYK': 'New York Knicks',
+    'OKC': 'Oklahoma City Thunder', 'ORL': 'Orlando Magic', 'PHI': 'Philadelphia 76ers', 'PHX': 'Phoenix Suns',
+    'POR': 'Portland Trail Blazers', 'SAC': 'Sacramento Kings', 'SAS': 'San Antonio Spurs', 'TOR': 'Toronto Raptors',
+    'UTA': 'Utah Jazz', 'WAS': 'Washington Wizards'
+}
+
 def get_logo(abbr):
     return f"https://a.espncdn.com/i/teamlogos/nba/500/{abbr.lower()}.png"
 
-# --- 2. MOTORE DI RICERCA DATI (Aggiornamento ogni 60 min) ---
+# --- 2. MOTORE DI RICERCA DATI ---
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_nba_data():
     try:
@@ -37,153 +50,105 @@ def get_nba_data():
         
         # C. Unione Database
         df = pd.merge(df_sea, df_l10, on='PLAYER_ID', suffixes=('', '_L10'), how='left').fillna(0)
-        df = df.rename(columns={'PLAYER_NAME': 'Giocatore', 'TEAM_ABBREVIATION': 'Squadra'})
+        df = df.rename(columns={'PLAYER_NAME': 'Giocatore', 'TEAM_ABBREVIATION': 'Abbr'})
         
-        # Filtro base per escludere panchinari inutili
+        # Aggiunta Nome Completo
+        df['Squadra'] = df['Abbr'].map(TEAM_NAMES)
+        
         df = df[df['MIN'] > 15.0]
 
-        # --- LOGICA SICUREZZA INFORTUNI ---
+        # Logica Infortuni
         def calcola_stato(r):
-            if r['GP_L10'] == 0 and r['GP'] > 5: return "❌ OUT (0 Min. Recenti)"
-            elif r['GP_L10'] < 4 and r['GP'] > 15: return "🚑 DUBBIO / Rischio"
+            if r['GP_L10'] == 0 and r['GP'] > 5: return "❌ OUT"
+            elif r['GP_L10'] < 4 and r['GP'] > 15: return "🚑 DUBBIO"
             else: return "✅ OK"
         df['Stato'] = df.apply(calcola_stato, axis=1)
 
-        # --- LOGICA PRONOSTICO TREND ---
+        # Logica Pronostico Trend
         def calcola_pronostico(r):
-            if "OUT" in r['Stato'] or "DUBBIO" in r['Stato']: return "⛔ Evitare Bet"
+            if "OUT" in r['Stato'] or "DUBBIO" in r['Stato']: return "⛔ Evitare"
             diff = r['PTS_L10'] - r['PTS']
             if diff >= 4.0: return "🔥 OVER Punti"
             elif diff <= -4.0: return "❄️ UNDER Punti"
             elif r['AST_L10'] >= 7.5: return "🎯 OVER Assist"
-            elif r['REB_L10'] >= 9.0: return "🧱 OVER Rimbalzi"
-            elif r['FG3M_L10'] >= 3.0: return "💦 OVER Triple"
-            else: return "⚖️ Affidabile (Medie fisse)"
+            else: return "⚖️ Stabile"
         df['Trend'] = df.apply(calcola_pronostico, axis=1)
 
-        # --- LOGICA SAFE PICK (Quota Cassaforte) ---
+        # Logica Safe Pick
         def giocata_sicura(r):
             if "OUT" in r['Stato'] or "DUBBIO" in r['Stato']: return "---"
-            pts_ref = r['PTS_L10'] if r['PTS_L10'] > 0 else r['PTS']
-            safe_val = int(pts_ref * 0.7)
-            if safe_val >= 10: return f"🟢 OVER {safe_val}.5 P"
-            elif r['AST_L10'] >= 6.0: return f"🟢 OVER {int(r['AST_L10']*0.7)}.5 A"
-            elif r['REB_L10'] >= 8.0: return f"🟢 OVER {int(r['REB_L10']*0.7)}.5 R"
-            else: return "---"
+            safe_val = int(r['PTS_L10'] * 0.7) if r['PTS_L10'] > 0 else int(r['PTS'] * 0.7)
+            return f"🟢 OVER {safe_val}.5 P" if safe_val > 8 else "---"
         df['Safe Pick'] = df.apply(giocata_sicura, axis=1)
 
-        # Partite della Notte
+        # Partite
         games = scoreboardv2.ScoreboardV2().get_data_frames()[0]
         partite_oggi = []
         for _, row in games.iterrows():
             gamecode = row['GAMECODE']
-            away, home = gamecode.split('/')[1][:3], gamecode.split('/')[1][3:]
-            partite_oggi.append({'Casa': home, 'Trasferta': away, 'Orario': row['GAME_STATUS_TEXT']})
+            away_abbr, home_abbr = gamecode.split('/')[1][:3], gamecode.split('/')[1][3:]
+            partite_oggi.append({
+                'Casa': TEAM_NAMES.get(home_abbr, home_abbr), 'CasaAbbr': home_abbr,
+                'Trasferta': TEAM_NAMES.get(away_abbr, away_abbr), 'TrasfertaAbbr': away_abbr,
+                'Orario': row['GAME_STATUS_TEXT']
+            })
 
         return df, partite_oggi
-    except Exception as e:
+    except:
         return None, None
 
-with st.spinner("🔄 Connessione server NBA ed elaborazione dati in corso..."):
-    df_totale, partite = get_nba_data()
+df_totale, partite = get_nba_data()
 
 if df_totale is None:
-    st.error("⚠️ Errore di connessione ai server NBA. Ricarica la pagina tra un istante.")
+    st.error("Errore connessione NBA. Ricarica.")
     st.stop()
 
-# --- 3. INTERFACCIA APP ---
-st.title("🏀 NBA Oracle ULTIMATE")
-st.caption("⚡ Auto-Update 60 min | Database Completo | Rilevamento Assenze Statistiche")
+# --- 3. INTERFACCIA ---
+tab_match, tab_db_sea, tab_db_l10, tab_calc = st.tabs(["🔥 Match", "🗄️ Stagione", "📈 Forma L10", "🧮 Calcolatore"])
 
-tab_match, tab_db_sea, tab_db_l10, tab_calc = st.tabs([
-    "🔥 Match & Pronostici", "🗄️ Database Stagione", "📈 Forma (Last 10)", "🧮 Calcolatore Valore"
-])
-
-# ==========================================
-# SCHEDA 1: MATCH E PRONOSTICI LIVE
-# ==========================================
 with tab_match:
     if not partite:
-        st.info("Nessuna partita in programma trovata sui server NBA per la giornata odierna.")
+        st.info("Nessun match oggi.")
     else:
         for p in partite:
-            h, a = p['Casa'], p['Trasferta']
             st.markdown(f"""
-            <div class="match-header"><img src="{get_logo(h)}" class="team-logo">{h} vs {a}<img src="{get_logo(a)}" class="team-logo"></div>
-            <div class="time-text">🕒 Orario USA/Status: {p['Orario']}</div>
+            <div class="match-header">
+                <img src="{get_logo(p['CasaAbbr'])}" class="team-logo">{p['Casa']} vs {p['Trasferta']}<img src="{get_logo(p['TrasfertaAbbr'])}" class="team-logo">
+            </div>
+            <p style="text-align:center; color:gray;">{p['Orario']}</p>
             """, unsafe_allow_html=True)
             
-            # --- RADAR INFORTUNI ---
-            outs_h = df_totale[(df_totale['Squadra'] == h) & (df_totale['Stato'] != "✅ OK")]['Giocatore'].tolist()
-            outs_a = df_totale[(df_totale['Squadra'] == a) & (df_totale['Stato'] != "✅ OK")]['Giocatore'].tolist()
-            
-            if outs_h or outs_a:
-                allarme = "🚑 **RADAR ASSENZE/RISCHIO:** "
-                if outs_h: allarme += f"**{h}** ({', '.join(outs_h[:4])}) | "
-                if outs_a: allarme += f"**{a}** ({', '.join(outs_a[:4])})"
-                st.markdown(f'<div class="injury-alert">{allarme}</div>', unsafe_allow_html=True)
+            # Radar Infortuni
+            for side in [p['Casa'], p['Trasferta']]:
+                inf = df_totale[(df_totale['Squadra'] == side) & (df_totale['Stato'] != "✅ OK")]['Giocatore'].tolist()
+                if inf: st.markdown(f"<div class='injury-alert'>🚑 {side} Assenze: {', '.join(inf[:3])}</div>", unsafe_allow_html=True)
 
             c1, c2 = st.columns(2)
-            col_view = ['Giocatore', 'Stato', 'PTS_L10', 'AST_L10', 'REB_L10', 'Trend', 'Safe Pick']
-            
-            with c1:
-                st.markdown(f"**🏠 {h} (Padroni di Casa)**")
-                st.dataframe(df_totale[df_totale['Squadra'] == h][col_view].sort_values('PTS_L10', ascending=False).head(7), hide_index=True)
-            with c2:
-                st.markdown(f"**✈️ {a} (In Trasferta)**")
-                st.dataframe(df_totale[df_totale['Squadra'] == a][col_view].sort_values('PTS_L10', ascending=False).head(7), hide_index=True)
-            
+            cols = ['Giocatore', 'Stato', 'PTS_L10', 'AST_L10', 'Safe Pick']
+            with c1: st.dataframe(df_totale[df_totale['Squadra'] == p['Casa']][cols].head(6), hide_index=True)
+            with c2: st.dataframe(df_totale[df_totale['Squadra'] == p['Trasferta']][cols].head(6), hide_index=True)
             st.divider()
 
-# ==========================================
-# FUNZIONE PER RENDERIZZARE I DATABASE A TENDINA
-# ==========================================
-def render_grouped_db(df, cols, order_col):
-    squadre = sorted(df['Squadra'].unique())
-    for s in squadre:
-        with st.expander(f"🏀 {s} - Espandi per vedere i giocatori"):
-            df_s = df[df['Squadra'] == s][cols].sort_values(by=order_col, ascending=False)
-            st.dataframe(df_s, hide_index=True, use_container_width=True)
+# Funzione Database con Loghi e Nomi Lunghi
+def render_full_db(df, columns, order_by):
+    squadre_ordinate = sorted(df['Squadra'].unique())
+    for s in squadre_ordinate:
+        abbr = df[df['Squadra'] == s]['Abbr'].iloc[0]
+        with st.expander(f"🏀 {s}"):
+            st.markdown(f"<img src='{get_logo(abbr)}' class='team-logo-small'> **{s}**", unsafe_allow_html=True)
+            st.dataframe(df[df['Squadra'] == s][columns].sort_values(order_by, ascending=False), hide_index=True, use_container_width=True)
 
-# ==========================================
-# SCHEDA 2 E 3: DATABASE CON SQUADRE A TENDINA
-# ==========================================
 with tab_db_sea:
-    st.subheader("🗄️ Statistiche Medie Stagionali (Per Squadra)")
-    st.write("Dati calcolati su tutte le partite giocate da inizio anno ad oggi.")
-    col_sea = ['Giocatore', 'Stato', 'PTS', 'AST', 'REB', 'FG3M']
-    render_grouped_db(df_totale, col_sea, 'PTS')
+    render_full_db(df_totale, ['Giocatore', 'Stato', 'PTS', 'AST', 'REB', 'FG3M'], 'PTS')
 
 with tab_db_l10:
-    st.subheader("📈 Stato di Forma (Ultime 10 Partite)")
-    st.write("Dati calcolati SOLO sulle ultime 10 prestazioni. Ideale per capire chi è 'on fire'.")
-    col_l10 = ['Giocatore', 'Stato', 'PTS_L10', 'AST_L10', 'REB_L10', 'FG3M_L10']
-    render_grouped_db(df_totale, col_l10, 'PTS_L10')
+    render_full_db(df_totale, ['Giocatore', 'Stato', 'PTS_L10', 'AST_L10', 'REB_L10', 'FG3M_L10'], 'PTS_L10')
 
-# ==========================================
-# SCHEDA 4: CALCOLATORE VALORE
-# ==========================================
 with tab_calc:
-    st.subheader("🧮 Calcolatore Vantaggio Matematico vs Bookmaker")
-    
-    cA, cB = st.columns(2)
-    p_sel = cA.selectbox("1. Seleziona Giocatore:", sorted(df_totale['Giocatore'].tolist()))
-    stat_type = cB.radio("2. Mercato da analizzare:", ["Punti", "Assist", "Rimbalzi"])
-    
-    col_map = {"Punti": "PTS_L10", "Assist": "AST_L10", "Rimbalzi": "REB_L10"}
-    val_form = df_totale[df_totale['Giocatore'] == p_sel][col_map[stat_type]].values[0]
-    stato_p = df_totale[df_totale['Giocatore'] == p_sel]['Stato'].values[0]
-    
-    st.metric(f"Media {stat_type} (Ultime 10)", f"{val_form:.1f}", delta=stato_p, delta_color="off")
-    
-    linea = st.number_input("3. Inserisci Linea proposta dal Bookmaker:", step=0.5)
-    
+    p_sel = st.selectbox("Giocatore:", sorted(df_totale['Giocatore'].tolist()))
+    stat_val = df_totale[df_totale['Giocatore'] == p_sel]['PTS_L10'].values[0]
+    st.metric(f"Media Punti Recente {p_sel}", f"{stat_val:.1f}")
+    linea = st.number_input("Linea Bookmaker:", step=0.5)
     if linea > 0:
-        st.divider()
-        if "OUT" in stato_p or "DUBBIO" in stato_p:
-            st.error("⚠️ **ATTENZIONE:** Il giocatore risulta a rischio assenza. Sconsigliato scommettere.")
-        else:
-            margine = val_form - linea
-            if margine > 1.5: st.success(f"🔥 **SUPER VALORE!** La media è superiore alla linea di **{margine:.1f}**. 👉 **Gioca OVER**")
-            elif margine < -1.5: st.error(f"❄️ **SOTTO MEDIA!** La media è inferiore alla linea di **{abs(margine):.1f}**. 👉 **Gioca UNDER**")
-            else: st.warning("⚖️ **LINEA PERFETTA.** Il bookmaker ha centrato la quota. Scommessa sconsigliata a livello matematico.")
+        if stat_val > linea + 1.5: st.success("🔥 VALORE OVER")
+        elif stat_val < linea - 1.5: st.error("❄️ VALORE UNDER")
