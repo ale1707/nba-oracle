@@ -3,7 +3,7 @@ import pandas as pd
 from nba_api.stats.endpoints import leaguedashplayerstats, scoreboardv2
 from datetime import datetime, timedelta
 
-# --- 1. CONFIGURAZIONE E STILE INTEGRALE (TUTTO RIPRISTINATO) ---
+# --- 1. CONFIGURAZIONE E STILE INTEGRALE (NESSUN TAGLIO) ---
 st.set_page_config(page_title="NBA Oracle ULTIMATE", layout="wide", page_icon="🏀", initial_sidebar_state="collapsed")
 
 st.markdown("""
@@ -29,22 +29,14 @@ st.markdown("""
         border-radius: 8px;
         text-align: center;
     }
-    /* Stile per la nuova sezione risultati */
     .result-box {
-        display: flex; 
-        justify-content: center; 
-        align-items: center; 
-        background: #fdfdfd; 
-        padding: 15px; 
-        border-radius: 10px; 
-        margin-bottom: 10px; 
-        border: 1px solid #eee; 
-        border-left: 5px solid #ff4b4b;
+        display: flex; justify-content: center; align-items: center; background: #fdfdfd; 
+        padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #eee; border-left: 5px solid #1E1E1E;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# Mappatura Completa Squadre NBA (Tutte le 30 squadre presenti)
+# Mappatura Completa Squadre NBA
 TEAM_NAMES = {
     'ATL': 'Atlanta Hawks', 'BOS': 'Boston Celtics', 'BKN': 'Brooklyn Nets', 'CHA': 'Charlotte Hornets',
     'CHI': 'Chicago Bulls', 'CLE': 'Cleveland Cavaliers', 'DAL': 'Dallas Mavericks', 'DEN': 'Denver Nuggets',
@@ -59,27 +51,29 @@ TEAM_NAMES = {
 def get_logo(abbr):
     return f"https://a.espncdn.com/i/teamlogos/nba/500/{abbr.lower()}.png"
 
-# --- 2. MOTORE DI ELABORAZIONE DATI POTENZIATO ---
+# --- 2. MOTORE DI ELABORAZIONE DATI POTENZIATO (FIX SGA & WILLIAMS) ---
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_nba_data():
     try:
-        # A. Recupero Dati (Stagione, Last 10, Last 3 per infortuni lampo)
+        # A. Recupero Dati
         season = leaguedashplayerstats.LeagueDashPlayerStats(per_mode_detailed='PerGame').get_data_frames()[0]
         l10 = leaguedashplayerstats.LeagueDashPlayerStats(per_mode_detailed='PerGame', last_n_games=10).get_data_frames()[0]
         l3 = leaguedashplayerstats.LeagueDashPlayerStats(per_mode_detailed='PerGame', last_n_games=3).get_data_frames()[0]
         
-        # B. Merge dei Database
+        # B. Merge dei Database (how='left' per non perdere gli infortunati o chi salta gare)
         df = pd.merge(season[['PLAYER_ID', 'PLAYER_NAME', 'TEAM_ABBREVIATION', 'MIN', 'PTS', 'AST', 'REB', 'FG3M', 'GP']], 
                       l10[['PLAYER_ID', 'MIN', 'PTS', 'AST', 'REB', 'FG3M', 'GP']], 
-                      on='PLAYER_ID', suffixes=('', '_L10'))
+                      on='PLAYER_ID', how='left', suffixes=('', '_L10'))
         
-        df = pd.merge(df, l3[['PLAYER_ID', 'GP']], on='PLAYER_ID', suffixes=('', '_L3')).fillna(0)
+        df = pd.merge(df, l3[['PLAYER_ID', 'GP']], on='PLAYER_ID', how='left', suffixes=('', '_L3')).fillna(0)
         
         df = df.rename(columns={'PLAYER_NAME': 'Giocatore', 'TEAM_ABBREVIATION': 'Abbr'})
         df['Squadra'] = df['Abbr'].map(TEAM_NAMES)
-        df = df[df['MIN'] > 14.0]
+        
+        # Filtro minimo di sicurezza (non togliere Shai!)
+        df = df[df['MIN'] > 8.0]
 
-        # LOGICA INFORTUNI (Mitchell Safe)
+        # LOGICA INFORTUNI (Mitchell/SGA Safe)
         def check_status(r):
             if r['GP_L3'] == 0 and r['GP'] > 5: return "❌ OUT"
             elif r['GP_L3'] < 2: return "🚑 RISCHIO/DUBBIO"
@@ -87,7 +81,7 @@ def get_nba_data():
             else: return "✅ OK"
         df['Stato'] = df.apply(check_status, axis=1)
 
-        # ANALISI TREND
+        # ANALISI TREND INTEGRALE
         def get_trend(r):
             if "OUT" in r['Stato'] or "RISCHIO" in r['Stato']: return "⛔ EVITARE"
             diff = r['PTS_L10'] - r['PTS']
@@ -118,7 +112,7 @@ def get_nba_data():
                 'Status': row['GAME_STATUS_TEXT']
             })
 
-        # --- SEZIONE RISULTATI IERI (AGGIUNTA SENZA RIMUOVERE NULLA) ---
+        # RISULTATI IERI (INTEGRATI)
         yesterday = (datetime.now() - timedelta(1)).strftime('%Y-%m-%d')
         sb_yesterday = scoreboardv2.ScoreboardV2(game_date=yesterday).get_data_frames()
         risultati_ieri = []
@@ -141,11 +135,9 @@ def get_nba_data():
 df_totale, partite, risultati = get_nba_data()
 
 if df_totale is None:
-    st.error("Connessione NBA fallita. Ricarica la pagina.")
-    st.stop()
+    st.error("Connessione API fallita."); st.stop()
 
-# --- 3. INTERFACCIA TABS ---
-# Manteniamo esattamente i tuoi tab, aggiungendo quello dei Risultati
+# --- 3. INTERFACCIA TABS (5 TABS TOTALI) ---
 t1, t_res, t2, t3, t4 = st.tabs(["🔥 MATCH DAY", "📅 RISULTATI IERI", "📊 DB STAGIONE", "📈 FORMA L10", "🧮 CALCOLATORE"])
 
 with t1:
@@ -154,34 +146,27 @@ with t1:
     else:
         for p in partite:
             st.markdown(f'<div class="match-header"><img src="{get_logo(p["CasaAbbr"])}" class="team-logo">{p["Casa"]} vs {p["Trasferta"]}<img src="{get_logo(p["TrasfertaAbbr"])}" class="team-logo"></div>', unsafe_allow_html=True)
-            st.markdown(f'<p style="text-align:center; color:gray;">Status: {p["Status"]}</p>', unsafe_allow_html=True)
             
-            # Radar Infortuni sotto il match
             for side in [p['Casa'], p['Trasferta']]:
                 lista_out = df_totale[(df_totale['Squadra'] == side) & (df_totale['Stato'] != "✅ OK")]['Giocatore'].tolist()
                 if lista_out:
-                    st.markdown(f'<div class="injury-alert">🚑 ASSENZE/DUBBI {side.upper()}: {", ".join(lista_out[:5])}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="injury-alert">🚑 ASSENZE/DUBBI {side.upper()}: {", ".join(lista_out[:6])}</div>', unsafe_allow_html=True)
 
             c1, c2 = st.columns(2)
             col_match = ['Giocatore', 'Stato', 'PTS_L10', 'AST_L10', 'REB_L10', 'Analisi', 'Safe Pick']
             cfg = {"PTS_L10": "PTS", "AST_L10": "AST", "REB_L10": "REB", "Safe Pick": "SAFE 🟢"}
             with c1:
                 st.markdown(f"**🏠 {p['Casa']}**")
-                st.dataframe(df_totale[df_totale['Squadra'] == p['Casa']][col_match].sort_values('PTS_L10', ascending=False).head(8), hide_index=True, column_config=cfg)
+                st.dataframe(df_totale[df_totale['Squadra'] == p['Casa']][col_match].sort_values('PTS_L10', ascending=False).head(10), hide_index=True, column_config=cfg)
             with c2:
                 st.markdown(f"**✈️ {p['Trasferta']}**")
-                st.dataframe(df_totale[df_totale['Squadra'] == p['Trasferta']][col_match].sort_values('PTS_L10', ascending=False).head(8), hide_index=True, column_config=cfg)
+                st.dataframe(df_totale[df_totale['Squadra'] == p['Trasferta']][col_match].sort_values('PTS_L10', ascending=False).head(10), hide_index=True, column_config=cfg)
             st.divider()
 
 with t_res:
-    st.subheader("Risultati della notte")
-    if not risultati:
-        st.info("Nessun risultato disponibile.")
-    else:
-        for r in risultati:
-            st.markdown(f'<div class="result-box"><div style="flex:1;text-align:right;"><b>{r["Casa"]}</b> <img src="{get_logo(r["CasaAbbr"])}" width="35"></div><div style="flex:0.6;text-align:center;font-size:22px;font-weight:bold;color:#ff4b4b;">{r["CasaPts"]} - {r["TrasfertaPts"]}</div><div style="flex:1;text-align:left;"><img src="{get_logo(r["TrasfertaAbbr"])}" width="35"> <b>{r["Trasferta"]}</b></div></div>', unsafe_allow_html=True)
+    for r in risultati:
+        st.markdown(f'<div class="result-box"><div style="flex:1;text-align:right;"><b>{r["Casa"]}</b> <img src="{get_logo(r["CasaAbbr"])}" width="35"></div><div style="flex:0.6;text-align:center;font-size:22px;font-weight:bold;color:#ff4b4b;">{r["CasaPts"]} - {r["TrasfertaPts"]}</div><div style="flex:1;text-align:left;"><img src="{get_logo(r["TrasfertaAbbr"])}" width="35"> <b>{r["Trasferta"]}</b></div></div>', unsafe_allow_html=True)
 
-# Funzione Database per Squadre (con LOGHI e NOMI LUNGHI)
 def render_db(df, cols, sort_col, cfg=None):
     for s in sorted(df['Squadra'].unique()):
         abbr = df[df['Squadra'] == s]['Abbr'].iloc[0]
@@ -201,8 +186,8 @@ with t4:
     st.subheader("Calcolatore Valore")
     p_sel = st.selectbox("Seleziona Giocatore:", sorted(df_totale['Giocatore'].tolist()))
     stat = df_totale[df_totale['Giocatore'] == p_sel].iloc[0]
-    st.metric(f"Media Recente {p_sel}", f"{stat['PTS_L10']:.1f}", delta=f"Stato: {stat['Stato']}")
-    linea = st.number_input("Inserisci Linea Bookmaker:", step=0.5)
+    st.metric(f"Media L10 {p_sel}", f"{stat['PTS_L10']:.1f}", delta=f"Stato: {stat['Stato']}")
+    linea = st.number_input("Linea Bookmaker:", step=0.5)
     if linea > 0:
         if stat['PTS_L10'] > linea + 1.5: st.success("🔥 OVER CONSIGLIATO")
         elif stat['PTS_L10'] < linea - 1.5: st.error("❄️ UNDER CONSIGLIATO")
