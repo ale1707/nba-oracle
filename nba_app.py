@@ -1,71 +1,82 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="NBA Oracle Gold", layout="wide")
-st.title("🏀 NBA Oracle: Database Statistiche Complete")
+st.set_page_config(page_title="NBA Match-Day Oracle", layout="wide")
 
-# --- DATABASE ESTESO (Esempio con i principali per categoria) ---
-# Nota: Puoi espandere ogni lista aggiungendo nomi e numeri tra le parentesi [ ]
-nba_data = {
-    "Giocatore": [
-        "Luka Doncic", "Kyrie Irving", "Nikola Jokic", "Jamal Murray", 
-        "Jayson Tatum", "Jaylen Brown", "D. Mitchell", "D. Garland",
-        "S. Gilgeous-Alexander", "Chet Holmgren", "Anthony Edwards", "Rudy Gobert",
-        "Jalen Brunson", "OG Anunoby", "Giannis Antetokounmpo", "Damian Lillard",
-        "LeBron James", "Anthony Davis", "Stephen Curry", "Klay Thompson",
-        "Kevin Durant", "Devin Booker", "Victor Wembanyama", "Tyrese Maxey"
-    ],
-    "Squadra": [
-        "DAL", "DAL", "DEN", "DEN", 
-        "BOS", "BOS", "CLE", "CLE", 
-        "OKC", "OKC", "MIN", "MIN",
-        "NYK", "NYK", "MIL", "MIL",
-        "LAL", "LAL", "GSW", "GSW",
-        "PHX", "PHX", "SAS", "PHI"
-    ],
-    "Media Punti": [33.9, 25.6, 26.1, 21.2, 27.1, 23.0, 26.6, 18.0, 31.1, 16.5, 25.9, 13.7, 27.2, 15.0, 30.4, 24.3, 24.8, 24.9, 26.4, 17.0, 27.2, 27.1, 21.4, 25.9],
-    "Media Assist": [9.8, 5.2, 9.0, 6.5, 4.9, 3.6, 6.1, 6.5, 6.4, 2.4, 5.1, 1.3, 6.7, 2.2, 6.5, 7.0, 7.8, 3.5, 5.1, 2.3, 5.0, 6.9, 3.8, 6.2],
-    "Media Rimbalzi": [9.2, 5.0, 12.3, 4.1, 8.1, 5.5, 5.1, 2.7, 5.5, 7.9, 5.4, 12.9, 3.6, 5.0, 11.5, 4.4, 7.2, 12.2, 4.5, 3.3, 6.6, 4.5, 10.6, 3.7],
-    "Media 3pt Segnati": [4.1, 3.0, 1.1, 2.4, 3.1, 2.1, 3.3, 2.3, 1.3, 1.6, 2.4, 0.0, 2.8, 2.2, 0.5, 3.0, 2.1, 0.5, 4.8, 3.5, 2.2, 2.2, 1.8, 3.0],
-}
+st.title("🏀 NBA Match-Day: Analisi e Pronostici")
+st.write("Analisi dettagliata per ogni scontro di stanotte (Orari Italiani)")
 
-df = pd.DataFrame(nba_data)
+# --- FUNZIONE PER CREARE LE TABELLE SQUADRA ---
+def crea_tabella_squadra(data):
+    df = pd.DataFrame(data)
+    # Calcolo Combo
+    df['P+A+R'] = df['Punti'] + df['Assist'] + df['Rimbalzi']
+    return df
 
-# --- CALCOLO COMBO ---
-df['P+A+R'] = df['Media Punti'] + df['Media Assist'] + df['Media Rimbalzi']
-df['P+A'] = df['Media Punti'] + df['Media Assist']
-df['P+R'] = df['Media Punti'] + df['Media Rimbalzi']
-
-# --- SIDEBAR FILTRI ---
-st.sidebar.header("Strumenti di Ricerca")
-search = st.sidebar.text_input("Cerca Giocatore (es. Curry):")
-squadra_filter = st.sidebar.multiselect("Seleziona Squadre:", options=sorted(df['Squadra'].unique()), default=sorted(df['Squadra'].unique()))
-
-# Applicazione Filtri
-filtered_df = df[df['Squadra'].isin(squadra_filter)]
-if search:
-    filtered_df = filtered_df[filtered_df['Giocatore'].str.contains(search, case=False)]
-
-# --- VISUALIZZAZIONE ---
-st.subheader("📈 Tabella Analisi Giocatori")
-st.write("Dati medi pronti per il confronto con le linee dei bookmakers.")
-st.dataframe(filtered_df.style.format(precision=1), use_container_width=True)
-
+# =========================================================
+# PARTITA 1: LAKERS vs NUGGETS (Ore 02:00)
+# =========================================================
 st.divider()
+st.header("🏟️ L.A. Lakers @ Denver Nuggets")
+st.subheader("⏰ Ore: 02:00 (ITA)")
 
-# --- ANALISI SPECIFICA CATEGORIE ---
-st.subheader("🎯 Top della Notte per Categoria")
-c1, c2, c3, c4 = st.columns(4)
+col1, col2 = st.columns(2)
 
-with c1:
-    top_p = df.nlargest(1, 'Media Punti')
-    st.metric("Punti (AVG)", f"{top_p['Giocatore'].values[0]}", f"{top_p['Media Punti'].values[0]}")
-with c2:
-    top_a = df.nlargest(1, 'Media Assist')
-    st.metric("Assist (AVG)", f"{top_a['Giocatore'].values[0]}", f"{top_a['Media Assist'].values[0]}")
-with c3:
-    top_r = df.nlargest(1, 'Media Rimbalzi')
-    st.metric("Rimbalzi (AVG)", f"{top_r['Giocatore'].values[0]}", f"{top_r['Media Rimbalzi'].values[0]}")
-with c4:
-    top_3 = df.nlargest(1, 'Media 3pt Segnati')
-    st.metric("Triple (AVG)", f"{top_3['Giocatore'].values[0]}", f"{top_3['Media 3pt Segnati'].values[0]}")
+with col1:
+    st.markdown("### 🟡 L.A. Lakers")
+    lakers_data = {
+        "Giocatore": ["LeBron James", "Anthony Davis", "Austin Reaves"],
+        "Punti": [24.8, 25.1, 15.9],
+        "Assist": [7.8, 3.5, 5.5],
+        "Rimbalzi": [7.2, 12.2, 4.3],
+        "Triple": [2.1, 0.5, 1.9],
+        "Pronostico": ["OVER P+A", "OVER Rimbalzi", "UNDER Punti"]
+    }
+    st.table(crea_tabella_squadra(lakers_data))
+
+with col2:
+    st.markdown("### 🔵 Denver Nuggets")
+    nuggets_data = {
+        "Giocatore": ["Nikola Jokic", "Jamal Murray", "Michael Porter Jr"],
+        "Punti": [26.1, 21.2, 16.7],
+        "Assist": [9.0, 6.5, 1.5],
+        "Rimbalzi": [12.3, 4.1, 7.0],
+        "Triple": [1.1, 2.4, 2.8],
+        "Pronostico": ["OVER Assist", "OVER Punti", "OVER Triple"]
+    }
+    st.table(crea_tabella_squadra(nuggets_data))
+
+# =========================================================
+# PARTITA 2: CELTICS vs KNICKS (Ore 01:30)
+# =========================================================
+st.divider()
+st.header("🏟️ Boston Celtics @ New York Knicks")
+st.subheader("⏰ Ore: 01:30 (ITA)")
+
+col3, col4 = st.columns(2)
+
+with col3:
+    st.markdown("### 🟢 Boston Celtics")
+    celtics_data = {
+        "Giocatore": ["Jayson Tatum", "Jaylen Brown", "D. White"],
+        "Punti": [27.1, 23.0, 15.2],
+        "Assist": [4.9, 3.6, 5.2],
+        "Rimbalzi": [8.1, 5.5, 4.2],
+        "Triple": [3.1, 2.1, 2.7],
+        "Pronostico": ["OVER P+R", "OVER Punti", "OVER Triple"]
+    }
+    st.table(crea_tabella_squadra(celtics_data))
+
+with col4:
+    st.markdown("### 🟠 New York Knicks")
+    knicks_data = {
+        "Giocatore": ["Jalen Brunson", "Julius Randle", "OG Anunoby"],
+        "Punti": [27.2, 24.0, 15.1],
+        "Assist": [6.7, 4.8, 2.2],
+        "Rimbalzi": [3.6, 9.2, 5.0],
+        "Triple": [2.8, 1.7, 2.3],
+        "Pronostico": ["OVER Punti", "OVER Rimbalzi", "UNDER Punti"]
+    }
+    st.table(crea_tabella_squadra(knicks_data))
+
+st.sidebar.info("Aggiorna i dati ogni pomeriggio guardando Sofascore per avere la precisione massima.")
