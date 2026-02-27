@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
 from nba_api.stats.endpoints import leaguedashplayerstats, scoreboardv2
+from datetime import datetime, timedelta
 
-# --- 1. CONFIGURAZIONE E STILE INTEGRALE ---
+# --- 1. CONFIGURAZIONE E STILE INTEGRALE (TUTTO RIPRISTINATO) ---
 st.set_page_config(page_title="NBA Oracle ULTIMATE", layout="wide", page_icon="🏀", initial_sidebar_state="collapsed")
 
 st.markdown("""
@@ -28,10 +29,22 @@ st.markdown("""
         border-radius: 8px;
         text-align: center;
     }
+    /* Stile per la nuova sezione risultati */
+    .result-box {
+        display: flex; 
+        justify-content: center; 
+        align-items: center; 
+        background: #fdfdfd; 
+        padding: 15px; 
+        border-radius: 10px; 
+        margin-bottom: 10px; 
+        border: 1px solid #eee; 
+        border-left: 5px solid #ff4b4b;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# Mappatura Completa Squadre NBA
+# Mappatura Completa Squadre NBA (Tutte le 30 squadre presenti)
 TEAM_NAMES = {
     'ATL': 'Atlanta Hawks', 'BOS': 'Boston Celtics', 'BKN': 'Brooklyn Nets', 'CHA': 'Charlotte Hornets',
     'CHI': 'Chicago Bulls', 'CLE': 'Cleveland Cavaliers', 'DAL': 'Dallas Mavericks', 'DEN': 'Denver Nuggets',
@@ -104,18 +117,36 @@ def get_nba_data():
                 'Trasferta': TEAM_NAMES.get(away_a, away_a), 'TrasfertaAbbr': away_a,
                 'Status': row['GAME_STATUS_TEXT']
             })
-        return df, partite_oggi
-    except:
-        return None, None
 
-df_totale, partite = get_nba_data()
+        # --- SEZIONE RISULTATI IERI (AGGIUNTA SENZA RIMUOVERE NULLA) ---
+        yesterday = (datetime.now() - timedelta(1)).strftime('%Y-%m-%d')
+        sb_yesterday = scoreboardv2.ScoreboardV2(game_date=yesterday).get_data_frames()
+        risultati_ieri = []
+        if not sb_yesterday[0].empty:
+            header, linescore = sb_yesterday[0], sb_yesterday[1]
+            for _, row in header.iterrows():
+                h_id, a_id = row['HOME_TEAM_ID'], row['VISITOR_TEAM_ID']
+                h_score = linescore[linescore['TEAM_ID'] == h_id]['PTS'].values[0]
+                a_score = linescore[linescore['TEAM_ID'] == a_id]['PTS'].values[0]
+                gc_parts = row['GAMECODE'].split('/')[1]
+                risultati_ieri.append({
+                    'Casa': TEAM_NAMES.get(gc_parts[3:], "Home"), 'CasaAbbr': gc_parts[3:], 'CasaPts': h_score,
+                    'Trasferta': TEAM_NAMES.get(gc_parts[:3], "Away"), 'TrasfertaAbbr': gc_parts[:3], 'TrasfertaPts': a_score
+                })
+        
+        return df, partite_oggi, risultati_ieri
+    except:
+        return None, None, None
+
+df_totale, partite, risultati = get_nba_data()
 
 if df_totale is None:
     st.error("Connessione NBA fallita. Ricarica la pagina.")
     st.stop()
 
 # --- 3. INTERFACCIA TABS ---
-t1, t2, t3, t4 = st.tabs(["🔥 MATCH DAY", "📊 DB STAGIONE", "📈 FORMA L10", "🧮 CALCOLATORE"])
+# Manteniamo esattamente i tuoi tab, aggiungendo quello dei Risultati
+t1, t_res, t2, t3, t4 = st.tabs(["🔥 MATCH DAY", "📅 RISULTATI IERI", "📊 DB STAGIONE", "📈 FORMA L10", "🧮 CALCOLATORE"])
 
 with t1:
     if not partite:
@@ -142,6 +173,14 @@ with t1:
                 st.dataframe(df_totale[df_totale['Squadra'] == p['Trasferta']][col_match].sort_values('PTS_L10', ascending=False).head(8), hide_index=True, column_config=cfg)
             st.divider()
 
+with t_res:
+    st.subheader("Risultati della notte")
+    if not risultati:
+        st.info("Nessun risultato disponibile.")
+    else:
+        for r in risultati:
+            st.markdown(f'<div class="result-box"><div style="flex:1;text-align:right;"><b>{r["Casa"]}</b> <img src="{get_logo(r["CasaAbbr"])}" width="35"></div><div style="flex:0.6;text-align:center;font-size:22px;font-weight:bold;color:#ff4b4b;">{r["CasaPts"]} - {r["TrasfertaPts"]}</div><div style="flex:1;text-align:left;"><img src="{get_logo(r["TrasfertaAbbr"])}" width="35"> <b>{r["Trasferta"]}</b></div></div>', unsafe_allow_html=True)
+
 # Funzione Database per Squadre (con LOGHI e NOMI LUNGHI)
 def render_db(df, cols, sort_col, cfg=None):
     for s in sorted(df['Squadra'].unique()):
@@ -167,3 +206,8 @@ with t4:
     if linea > 0:
         if stat['PTS_L10'] > linea + 1.5: st.success("🔥 OVER CONSIGLIATO")
         elif stat['PTS_L10'] < linea - 1.5: st.error("❄️ UNDER CONSIGLIATO")
+def get_nba_data():
+    try:
+        # A. Recupero Dati (Stagione, Last 10, Last 3)
+        season = leaguedashplayerstats.LeagueDashPlayerStats(per_mode_detailed='PerGame').get_data_frames()[0]
+        l10 = leaguedashplayerstats.League
