@@ -39,7 +39,7 @@ def get_nba_data():
         df = df.rename(columns={'PLAYER_NAME': 'Giocatore', 'TEAM_ABBREVIATION': 'Squadra'})
         df = df[df['MIN'] > 15.0]
 
-        # Logica Infortuni
+        # Logica Infortuni (🚑 se ha giocato poco nelle ultime 10 rispetto alla stagione)
         df['Stato'] = df.apply(lambda r: "🚑 OUT/Risk" if (r['GP_L10'] < 3 and r['GP'] > 10) else "✅ OK", axis=1)
 
         # Logica Pronostico Trend
@@ -49,6 +49,7 @@ def get_nba_data():
             if diff >= 4.0: return "🔥 OVER Punti (Super Forma)"
             elif diff <= -4.0: return "❄️ UNDER Punti (In Calo)"
             elif r['AST_L10'] >= 7.5: return "🎯 OVER Assist"
+            elif r['REB_L10'] >= 10.0: return "🧱 OVER Rimbalzi"
             else: return "⚖️ Giocare le Medie"
         df['Pronostico'] = df.apply(calcola_pronostico, axis=1)
 
@@ -72,11 +73,11 @@ def get_nba_data():
     except Exception as e:
         return None, None
 
-with st.spinner("🔄 Caricamento dati NBA..."):
+with st.spinner("🔄 Caricamento dati NBA in corso..."):
     df_totale, partite = get_nba_data()
 
 if df_totale is None:
-    st.error("Errore di connessione. Ricarica la pagina.")
+    st.error("Errore di connessione ai server NBA. Ricarica la pagina tra un istante.")
     st.stop()
 
 # --- 3. INTERFACCIA ---
@@ -90,26 +91,44 @@ with tab_match:
             h, a = p['Casa'], p['Trasferta']
             st.markdown(f'<div class="match-header"><img src="{get_logo(h)}" class="team-logo">{h} vs {a}<img src="{get_logo(a)}" class="team-logo"></div>', unsafe_allow_html=True)
             c1, c2 = st.columns(2)
-            cfg = {"PTS_L10": "PTS L10", "Safe Pick": "Safe Pick 🟢"}
+            
+            # Configurazione colonne per i match
+            col_match = ['Giocatore', 'Stato', 'PTS_L10', 'AST_L10', 'REB_L10', 'Safe Pick']
+            cfg_match = {
+                "PTS_L10": "PTS", 
+                "AST_L10": "AST", 
+                "REB_L10": "REB", 
+                "Safe Pick": "Safe Pick 🟢"
+            }
+            
             with c1:
-                st.dataframe(df_totale[df_totale['Squadra'] == h][['Giocatore', 'Stato', 'PTS_L10', 'Safe Pick']].head(6), hide_index=True)
+                st.markdown(f"**🏠 {h}**")
+                st.dataframe(df_totale[df_totale['Squadra'] == h][col_match].head(6), hide_index=True, column_config=cfg_match)
             with c2:
-                st.dataframe(df_totale[df_totale['Squadra'] == a][['Giocatore', 'Stato', 'PTS_L10', 'Safe Pick']].head(6), hide_index=True)
+                st.markdown(f"**✈️ {a}**")
+                st.dataframe(df_totale[df_totale['Squadra'] == a][col_match].head(6), hide_index=True, column_config=cfg_match)
+            st.divider()
 
 with tab_db_sea:
-    st.subheader("Database Stagione")
-    st.dataframe(df_totale[['Giocatore', 'Squadra', 'PTS', 'AST', 'REB', 'FG3M']], hide_index=True, use_container_width=True)
+    st.subheader("Database Stagione Completa")
+    st.dataframe(df_totale[['Giocatore', 'Squadra', 'Stato', 'PTS', 'AST', 'REB', 'FG3M']], hide_index=True, use_container_width=True)
 
 with tab_db_l10:
-    st.subheader("Database Forma (Ultime 10)")
-    st.dataframe(df_totale[['Giocatore', 'Squadra', 'PTS_L10', 'AST_L10', 'REB_L10', 'FG3M_L10']], hide_index=True, use_container_width=True)
+    st.subheader("Database Forma Recente (Last 10 Games)")
+    st.dataframe(df_totale[['Giocatore', 'Squadra', 'Stato', 'PTS_L10', 'AST_L10', 'REB_L10', 'FG3M_L10']], hide_index=True, use_container_width=True)
 
 with tab_calc:
-    st.subheader("Calcolatore")
-    p_sel = st.selectbox("Giocatore:", sorted(df_totale['Giocatore'].tolist()))
-    val_form = df_totale[df_totale['Giocatore'] == p_sel]['PTS_L10'].values[0]
-    st.metric("Media Punti Recente", f"{val_form:.1f}")
-    linea = st.number_input("Linea Bookmaker:", step=0.5)
+    st.subheader("Calcolatore Valore")
+    p_sel = st.selectbox("Seleziona Giocatore:", sorted(df_totale['Giocatore'].tolist()))
+    stat_type = st.radio("Cosa vuoi calcolare?", ["Punti", "Assist", "Rimbalzi"])
+    
+    col_map = {"Punti": "PTS_L10", "Assist": "AST_L10", "Rimbalzi": "REB_L10"}
+    val_form = df_totale[df_totale['Giocatore'] == p_sel][col_map[stat_type]].values[0]
+    
+    st.metric(f"Media {stat_type} (Ultime 10)", f"{val_form:.1f}")
+    linea = st.number_input(f"Inserisci Linea Bookmaker per {stat_type}:", step=0.5)
+    
     if linea > 0:
-        if val_form > linea + 1.5: st.success("🔥 OVER Consigliato")
-        elif val_form < linea - 1.5: st.error("❄️ UNDER Consigliato")
+        if val_form > linea + 1.0: st.success(f"🔥 OVER Consigliato: La media è superiore alla linea di {val_form - linea:.1f}")
+        elif val_form < linea - 1.0: st.error(f"❄️ UNDER Consigliato: La media è inferiore alla linea di {linea - val_form:.1f}")
+        else: st.warning("⚖️ Linea molto precisa, scommessa rischiosa.")
