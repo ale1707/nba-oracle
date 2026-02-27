@@ -198,3 +198,4 @@ with tab_calcolatore:
         else:
             st.warning("⚖️ **LINEA PERFETTA:** Il bookmaker ha impostato la linea quasi esattamente sulla media. Scommessa molto rischiosa.")
 
+
