@@ -206,8 +206,3 @@ with t4:
     if linea > 0:
         if stat['PTS_L10'] > linea + 1.5: st.success("🔥 OVER CONSIGLIATO")
         elif stat['PTS_L10'] < linea - 1.5: st.error("❄️ UNDER CONSIGLIATO")
-def get_nba_data():
-    try:
-        # A. Recupero Dati (Stagione, Last 10, Last 3)
-        season = leaguedashplayerstats.LeagueDashPlayerStats(per_mode_detailed='PerGame').get_data_frames()[0]
-        l10 = leaguedashplayerstats.League
