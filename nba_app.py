@@ -4,15 +4,36 @@ from nba_api.stats.endpoints import leaguedashplayerstats, scoreboardv2
 import time
 
 # --- 1. CONFIGURAZIONE APP E STILE MODERNO ---
-st.set_page_config(page_title="NBA Oracle PRO", layout="wide", page_icon="🏀")
+st.set_page_config(
+    page_title="NBA Oracle PRO", 
+    layout="wide", 
+    page_icon="🏀",
+    initial_sidebar_state="collapsed"
+)
 
-# Iniezione di CSS per rendere tutto più mobile-friendly
+# Iniezione di CSS per rendere l'app "nativa" e pulita
 st.markdown("""
     <style>
+    /* Nasconde il menu Streamlit, il footer e il pulsante in basso */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    .stDeployButton {display:none;}
+    div[data-testid="stStatusWidget"] {display:none;}
+    
+    /* Migliora l'aspetto su mobile */
     .team-logo { width: 45px; vertical-align: middle; margin: 0 10px; }
     .match-header { font-size: 24px; font-weight: 800; text-align: center; margin-bottom: 5px; }
     .time-text { font-size: 14px; color: #888; text-align: center; margin-bottom: 20px; }
     div[data-testid="stMetricValue"] { font-size: 24px; color: #1f77b4; }
+    
+    /* Elimina spazi bianchi inutili in alto */
+    .block-container {
+        padding-top: 1rem;
+        padding-bottom: 0rem;
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -176,3 +197,4 @@ with tab_calcolatore:
             st.error(f"❄️ **SOTTO MEDIA:** La media è più bassa della linea di **{abs(margine):.1f}**. \n\n👉 **Giocata Suggerita: UNDER**")
         else:
             st.warning("⚖️ **LINEA PERFETTA:** Il bookmaker ha impostato la linea quasi esattamente sulla media. Scommessa molto rischiosa.")
+
