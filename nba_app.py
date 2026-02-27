@@ -1,56 +1,57 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="NBA Oracle PRO", layout="wide")
+# Configurazione base
+st.set_page_config(page_title="NBA Oracle Stats", layout="wide")
 
-# CSS per rendere l'app più scura e professionale
-st.markdown("""
-    <style>
-    .main { background-color: #0e1117; }
-    .stDataFrame { border: 1px solid #ff4b4b; }
-    </style>
-    """, unsafe_allow_html=True)
+st.title("🏀 NBA Oracle: Analisi Scommesse")
 
-st.title("🏀 NBA Oracle v2.0 - Betting Intelligence")
+# --- SEZIONE 1: I TOP PICK ---
+st.header("🔥 Suggerimenti Player Props")
+st.write("Confronto tra Media Stagionale e Linea del Bookmaker")
 
-# Dati potenziati
-data = {
+# Dati dei giocatori (Numeri reali e calcolo scarto)
+nba_data = {
     "Giocatore": ["G. Antetokounmpo", "L. Doncic", "J. Tatum", "V. Wembanyama", "T. Haliburton"],
+    "Squadra": ["MIL", "DAL", "BOS", "SAS", "IND"],
     "Media Punti": [30.8, 33.9, 27.1, 21.4, 20.1],
-    "Linea Scommessa": [29.5, 34.5, 26.5, 23.5, 18.5],
-    "Probabilità (%)": [78, 52, 65, 45, 71]
+    "Linea Book": [29.5, 34.5, 26.5, 22.5, 18.5],
+    "Probabilità": ["78%", "52%", "65%", "45%", "71%"]
 }
 
-df = pd.DataFrame(data)
+df = pd.DataFrame(nba_data)
 
-# CALCOLO DEL MARGINE: Differenza tra media e linea
-df['Differenza'] = df['Media Punti'] - df['Linea Scommessa']
+# Calcoliamo il margine (quanto valore c'è nella giocata)
+df['Margine'] = df['Media Punti'] - df['Linea Book']
 
-# LOGICA DI CONSIGLIO
-def segnale(row):
-    if row['Differenza'] > 1 and row['Probabilità (%)'] > 70:
-        return "🔥 OVER FORTE"
-    elif row['Differenza'] > 0:
-        return "✅ OVER"
-    else:
-        return "⚠️ UNDER/RISCHIO"
+# Creiamo il consiglio testuale
+def genera_consiglio(m):
+    if m > 1.0: return "✅ OVER CONSIGLIATO"
+    if m > 0: return "🟡 OVER POSSIBILE"
+    return "❌ UNDER / RISCHIO"
 
-df['Consiglio'] = df.apply(segnale, axis=1)
+df['Consiglio'] = df['Margine'].apply(genera_consiglio)
 
-# Visualizzazione Tabella Principale
-st.subheader("📊 Analisi Performance e Target")
-st.dataframe(df.style.background_gradient(subset=['Probabilità (%)'], cmap='RdYlGn'), use_container_width=True)
+# Mostra la tabella principale
+st.table(df)
 
 st.divider()
 
-# NUOVA SEZIONE: I 3 "BOOM" DELLA NOTTE
-col1, col2, col3 = st.columns(3)
+# --- SEZIONE 2: LE PARTITE ---
+st.header("📅 Match di Stanotte")
 
-with col1:
-    st.metric(label="Miglior Over", value="Antetokounmpo", delta="+1.3 punti vs linea")
-with col2:
-    st.metric(label="Rischio Alto", value="Wembanyama", delta="-2.1 punti", delta_color="inverse")
-with col3:
+partite = {
+    "Match": ["Lakers @ Nuggets", "Celtics @ Knicks", "Warriors @ Suns", "Bucks @ Sixers"],
+    "Orario ITA": ["02:00", "01:30", "04:00", "02:30"],
+    "Quota Vittoria": ["2.10 | 1.75", "1.45 | 2.80", "1.90 | 1.90", "1.65 | 2.25"],
+    "Punti Totali (O/U)": ["228.5", "222.5", "234.0", "226.5"]
+}
+
+df_partite = pd.DataFrame(partite)
+st.table(df_partite)
+
+st.info("I dati sono basati sulle medie stagionali aggiornate. Controlla sempre le formazioni ufficiali (Inury Report) prima di puntare.")
     st.metric(label="Value Bet", value="Haliburton", delta="Quota 1.85")
 
 st.info("💡 La colonna 'Differenza' indica di quanto il giocatore supera solitamente la linea proposta dai bookmakers.")
+
