@@ -3,41 +3,24 @@ import pandas as pd
 from nba_api.stats.endpoints import leaguedashplayerstats, scoreboardv2
 import time
 
-# --- 1. CONFIGURAZIONE APP E STILE MODERNO ---
-st.set_page_config(
-    page_title="NBA Oracle PRO", 
-    layout="wide", 
-    page_icon="🏀",
-    initial_sidebar_state="collapsed"
-)
+# --- 1. CONFIGURAZIONE E STILE ---
+st.set_page_config(page_title="NBA Oracle ELITE", layout="wide", page_icon="🏀", initial_sidebar_state="collapsed")
 
-# Iniezione di CSS per rendere l'app "nativa" e pulita
 st.markdown("""
     <style>
-    /* Nasconde il menu Streamlit, il footer e il pulsante in basso */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     .stDeployButton {display:none;}
     div[data-testid="stStatusWidget"] {display:none;}
     
-    /* Migliora l'aspetto su mobile */
     .team-logo { width: 45px; vertical-align: middle; margin: 0 10px; }
     .match-header { font-size: 24px; font-weight: 800; text-align: center; margin-bottom: 5px; }
     .time-text { font-size: 14px; color: #888; text-align: center; margin-bottom: 20px; }
-    div[data-testid="stMetricValue"] { font-size: 24px; color: #1f77b4; }
-    
-    /* Elimina spazi bianchi inutili in alto */
-    .block-container {
-        padding-top: 1rem;
-        padding-bottom: 0rem;
-        padding-left: 1rem;
-        padding-right: 1rem;
-    }
+    .block-container { padding-top: 1rem; padding-bottom: 0rem; padding-left: 1rem; padding-right: 1rem; }
     </style>
 """, unsafe_allow_html=True)
 
-# Helper per estrarre i loghi delle squadre ufficiali
 def get_logo(abbr):
     return f"https://a.espncdn.com/i/teamlogos/nba/500/{abbr.lower()}.png"
 
@@ -45,157 +28,161 @@ def get_logo(abbr):
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_nba_data():
     try:
-        # Dati Stagionali
-        player_stats = leaguedashplayerstats.LeagueDashPlayerStats(per_mode_detailed='PerGame').get_data_frames()[0]
-        df = player_stats[['PLAYER_NAME', 'TEAM_ABBREVIATION', 'MIN', 'PTS', 'AST', 'REB', 'FG3M']]
-        df = df.rename(columns={
-            'PLAYER_NAME': 'Giocatore', 'TEAM_ABBREVIATION': 'Squadra',
-            'MIN': 'Min', 'PTS': 'Punti', 'AST': 'Assist', 'REB': 'Rimb', 'FG3M': '3PT'
-        })
-        df = df[df['Min'] > 12.0].sort_values(by='Punti', ascending=False) # Solo giocatori rilevanti
+        # A. Database Stagione Completa
+        season = leaguedashplayerstats.LeagueDashPlayerStats(per_mode_detailed='PerGame').get_data_frames()[0]
+        df_sea = season[['PLAYER_ID', 'PLAYER_NAME', 'TEAM_ABBREVIATION', 'MIN', 'PTS', 'AST', 'REB', 'FG3M', 'GP']]
+        
+        # B. Database Ultime 10 Partite (Forma Recente)
+        l10 = leaguedashplayerstats.LeagueDashPlayerStats(per_mode_detailed='PerGame', last_n_games=10).get_data_frames()[0]
+        df_l10 = l10[['PLAYER_ID', 'MIN', 'PTS', 'AST', 'REB', 'FG3M', 'GP']]
+        
+        # C. Unione dei due Database
+        df = pd.merge(df_sea, df_l10, on='PLAYER_ID', suffixes=('', '_L10'), how='left').fillna(0)
+        df = df.rename(columns={'PLAYER_NAME': 'Giocatore', 'TEAM_ABBREVIATION': 'Squadra'})
+        
+        # Filtro: Teniamo solo giocatori rilevanti (almeno 15 min di media in stagione)
+        df = df[df['MIN'] > 15.0]
 
-        # Generatore Pronostici Smart
-        def genera_pronostico(row):
-            if row['Punti'] > 25: return "🔥 OVER Punti"
-            elif row['Assist'] > 8: return "🎯 OVER Assist"
-            elif row['Rimb'] > 10: return "🧱 OVER Rimb"
-            elif row['3PT'] >= 3: return "💦 OVER Triple"
-            else: return "⚖️ Neutro"
-        df['Pronostico'] = df.apply(genera_pronostico, axis=1)
+        # --- LOGICA 1: Rilevatore Infortuni (Injury/Out Status) ---
+        # Se ha giocato < 4 partite nelle ultime 10, ma ne ha giocate tante in stagione, è infortunato/fuori.
+        df['Stato'] = df.apply(lambda r: "🚑 OUT/Risk" if (r['GP_L10'] < 4 and r['GP'] > 15) else "✅ OK", axis=1)
 
-        # Partite della Notte
+        # --- LOGICA 2: Generatore Pronostico (Basato sul Trend L10) ---
+        def calcola_pronostico(r):
+            if r['Stato'] == "🚑 OUT/Risk": return "⛔ Evitare Bet"
+            diff_pts = r['PTS_L10'] - r['PTS']
+            if diff_pts >= 4.0: return "🔥 OVER Punti (Super Forma)"
+            elif diff_pts <= -4.0: return "❄️ UNDER Punti (In Calo)"
+            elif r['AST_L10'] >= 7.5: return "🎯 OVER Assist"
+            elif r['REB_L10'] >= 10.0: return "🧱 OVER Rimbalzi"
+            elif r['FG3M_L10'] >= 3.0: return "💦 OVER Triple"
+            else: return "⚖️ Giocare le Medie"
+        df['Pronostico'] = df.apply(calcola_pronostico, axis=1)
+
+        # --- LOGICA 3: Giocata "Sicura" (Safe Pick) ---
+        # Prende le stats reali delle ultime 10, le abbassa del 30% per dare una quota cassaforte
+        def giocata_sicura(r):
+            if r['Stato'] == "🚑 OUT/Risk": return "---"
+            safe_pts = int(r['PTS_L10'] * 0.7)
+            safe_ast = int(r['AST_L10'] * 0.7)
+            safe_reb = int(r['REB_L10'] * 0.7)
+            
+            # Cerca la statistica più affidabile per la safe pick
+            if safe_pts >= 12: return f"🟢 OVER {safe_pts}.5 P"
+            elif safe_ast >= 5: return f"🟢 OVER {safe_ast}.5 A"
+            elif safe_reb >= 6: return f"🟢 OVER {safe_reb}.5 R"
+            else: return f"🟢 OVER {int(r['PTS_L10'] * 0.6)}.5 P"
+        df['Safe Pick'] = df.apply(giocata_sicura, axis=1)
+
+        # D. Partite della Notte
         games = scoreboardv2.ScoreboardV2().get_data_frames()[0]
         partite_oggi = []
         for _, row in games.iterrows():
-            gamecode = row['GAMECODE'] # Es. 20260227/LALDEN
-            away = gamecode.split('/')[1][:3]
-            home = gamecode.split('/')[1][3:]
-            orario = row['GAME_STATUS_TEXT']
-            partite_oggi.append({'Casa': home, 'Trasferta': away, 'Orario': orario})
+            gamecode = row['GAMECODE']
+            away, home = gamecode.split('/')[1][:3], gamecode.split('/')[1][3:]
+            partite_oggi.append({'Casa': home, 'Trasferta': away, 'Orario': row['GAME_STATUS_TEXT']})
 
+        # Ordina per chi è in forma (Punti L10) decrescente per le tabelle
+        df = df.sort_values(by='PTS_L10', ascending=False)
         return df, partite_oggi
     except Exception as e:
         return None, None
 
-# Caricamento Silenzioso
-with st.spinner("🔄 Connessione server NBA in corso..."):
+with st.spinner("🔄 Connessione server NBA & Calcolo Trend in corso..."):
     df_totale, partite = get_nba_data()
 
-# --- 3. INTERFACCIA A SCHEDE (Perfetta per Smartphone) ---
-st.title("🏀 NBA Oracle PRO")
-st.caption("⚡ Dati Ufficiali Live | Aggiornamento Automatico | Stile Sofascore")
+# --- 3. INTERFACCIA APP ---
+st.title("🏀 NBA Oracle ELITE")
+st.caption("⚡ Aggiornamento Automatico | Analisi Forma Ultime 10 Partite | Rilevamento Infortuni")
 
 if df_totale is None:
-    st.error("⚠️ I server NBA sono temporaneamente in manutenzione. Riprova tra 5 minuti.")
+    st.error("⚠️ Server NBA irraggiungibili o blocco temporaneo. Riprova più tardi.")
     st.stop()
 
-# Creazione delle 3 sezioni principali
-tab_partite, tab_database, tab_calcolatore = st.tabs(["🔥 Partite Oggi", "🗄️ Database", "🧮 Calcolatore Valore"])
+# 4 Schede (Tabs)
+tab_match, tab_db_sea, tab_db_l10, tab_calc = st.tabs([
+    "🔥 Match & Sicure", "🗄️ DB Stagione", "📈 Forma (Last 10)", "🧮 Calcolatore"
+])
 
 # ==========================================
-# SCHEDA 1: PARTITE (Stile Sofascore)
+# SCHEDA 1: PARTITE (Con Safe Picks e Infortuni)
 # ==========================================
-with tab_partite:
+with tab_match:
     if not partite:
-        st.info("Nessuna partita trovata per stanotte secondo il calendario ufficiale NBA.")
+        st.info("Nessuna partita programmata dai server NBA per stanotte.")
     else:
-        # Impostazione colonne per tabelle moderne
+        st.write("Le tabelle mostrano i migliori 6 giocatori. L'app segnala chi rischia di non giocare (🚑).")
+        
         cfg = {
             "Giocatore": st.column_config.TextColumn("Nome"),
-            "Punti": st.column_config.NumberColumn("PTS", format="%.1f"),
-            "Assist": st.column_config.NumberColumn("AST", format="%.1f"),
-            "Rimb": st.column_config.NumberColumn("REB", format="%.1f"),
-            "3PT": st.column_config.NumberColumn("3PT", format="%.1f"),
-            "Pronostico": st.column_config.TextColumn("Consiglio")
+            "Stato": st.column_config.TextColumn("Status"),
+            "PTS_L10": st.column_config.NumberColumn("PTS (Ultime 10)", format="%.1f"),
+            "Pronostico": st.column_config.TextColumn("Analisi Trend"),
+            "Safe Pick": st.column_config.TextColumn("Giocata Sicura 🟢")
         }
 
         for p in partite:
-            home = p['Casa']
-            away = p['Trasferta']
-
-            # Intestazione Match con Loghi 
+            h, a = p['Casa'], p['Trasferta']
             st.markdown(f"""
-            <div class="match-header">
-                <img src="{get_logo(home)}" class="team-logo"> {home} <span style="color:#555; font-size:18px;">vs</span> {away} <img src="{get_logo(away)}" class="team-logo">
-            </div>
-            <div class="time-text">🕒 Orario USA/Status: {p['Orario']}</div>
+            <div class="match-header"><img src="{get_logo(h)}" class="team-logo">{h} <span style="color:#555;font-size:18px;">vs</span> {a}<img src="{get_logo(a)}" class="team-logo"></div>
+            <div class="time-text">🕒 Orario USA: {p['Orario']}</div>
             """, unsafe_allow_html=True)
 
             c1, c2 = st.columns(2)
             
-            # Squadra in Casa
             with c1:
-                st.markdown(f"**🏠 {home}**")
-                df_home = df_totale[df_totale['Squadra'] == home].head(6)
-                st.dataframe(df_home[['Giocatore', 'Punti', 'Assist', 'Rimb', '3PT', 'Pronostico']],
-                             column_config=cfg, hide_index=True, use_container_width=True)
+                st.markdown(f"**🏠 {h}**")
+                df_h = df_totale[df_totale['Squadra'] == h].head(6)
+                st.dataframe(df_h[['Giocatore', 'Stato', 'PTS_L10', 'Pronostico', 'Safe Pick']], column_config=cfg, hide_index=True, use_container_width=True)
 
-            # Squadra in Trasferta
             with c2:
-                st.markdown(f"**✈️ {away}**")
-                df_away = df_totale[df_totale['Squadra'] == away].head(6)
-                st.dataframe(df_away[['Giocatore', 'Punti', 'Assist', 'Rimb', '3PT', 'Pronostico']],
-                             column_config=cfg, hide_index=True, use_container_width=True)
+                st.markdown(f"**✈️ {a}**")
+                df_a = df_totale[df_totale['Squadra'] == a].head(6)
+                st.dataframe(df_a[['Giocatore', 'Stato', 'PTS_L10', 'Pronostico', 'Safe Pick']], column_config=cfg, hide_index=True, use_container_width=True)
 
             st.divider()
 
 # ==========================================
-# SCHEDA 2: DATABASE AVANZATO
+# SCHEDA 2 & 3: DATABASE STAGIONE E FORMA
 # ==========================================
-with tab_database:
-    st.subheader("🔍 Filtri Avanzati Giocatori")
+def render_database(df, prefisso_colonne, titolo, desc):
+    st.subheader(titolo)
+    st.write(desc)
+    c1, c2, c3, c4 = st.columns(4)
+    team = c1.selectbox("Squadra:", ["Tutte"] + sorted(df['Squadra'].unique().tolist()), key=prefisso_colonne+"_t")
+    min_p = c2.number_input("PTS Min:", 0.0, 40.0, 0.0, key=prefisso_colonne+"_p")
+    min_a = c3.number_input("AST Min:", 0.0, 15.0, 0.0, key=prefisso_colonne+"_a")
+    min_r = c4.number_input("REB Min:", 0.0, 20.0, 0.0, key=prefisso_colonne+"_r")
     
-    # Barra di ricerca mobile-friendly
-    col_cerca, col_team = st.columns(2)
-    cerca = col_cerca.text_input("Cerca Nome (es. Curry):")
-    squadra = col_team.selectbox("Scegli Squadra:", ["Tutte"] + sorted(df_totale['Squadra'].unique().tolist()))
+    df_f = df.copy()
+    if team != "Tutte": df_f = df_f[df_f['Squadra'] == team]
+    df_f = df_f[(df_f[prefisso_colonne+'PTS'] >= min_p) & (df_f[prefisso_colonne+'AST'] >= min_a) & (df_f[prefisso_colonne+'REB'] >= min_r)]
+    
+    col_da_mostrare = ['Giocatore', 'Squadra', 'Stato', prefisso_colonne+'PTS', prefisso_colonne+'AST', prefisso_colonne+'REB', prefisso_colonne+'FG3M']
+    st.dataframe(df_f[col_da_mostrare], hide_index=True, use_container_width=True)
 
-    st.write("**Filtra per Statistiche Minime:**")
-    f1, f2, f3, f4 = st.columns(4)
-    min_p = f1.number_input("PTS", 0.0, 40.0, 0.0, 1.0)
-    min_a = f2.number_input("AST", 0.0, 15.0, 0.0, 1.0)
-    min_r = f3.number_input("REB", 0.0, 20.0, 0.0, 1.0)
-    min_3 = f4.number_input("3PT", 0.0, 6.0, 0.0, 0.5)
+with tab_db_sea:
+    render_database(df_totale, "", "🗄️ Database Stagione", "Medie calcolate sull'intero anno.")
 
-    # Applicazione filtri multipli
-    df_fil = df_totale.copy()
-    if squadra != "Tutte": df_fil = df_fil[df_fil['Squadra'] == squadra]
-    if cerca: df_fil = df_fil[df_fil['Giocatore'].str.contains(cerca, case=False)]
-    df_fil = df_fil[(df_fil['Punti'] >= min_p) & (df_fil['Assist'] >= min_a) & 
-                    (df_fil['Rimb'] >= min_r) & (df_fil['3PT'] >= min_3)]
-
-    st.dataframe(df_fil[['Giocatore', 'Squadra', 'Min', 'Punti', 'Assist', 'Rimb', '3PT']], 
-                 hide_index=True, use_container_width=True, height=500)
+with tab_db_l10:
+    render_database(df_totale, "PTS_L10".replace("PTS",""), "📈 Database Forma (Last 10)", "Medie basate SOLO sulle ultime 10 partite giocate.")
 
 # ==========================================
-# SCHEDA 3: CALCOLATORE DEL VALORE QUOTE
+# SCHEDA 4: CALCOLATORE VALORE
 # ==========================================
-with tab_calcolatore:
-    st.subheader("🧮 Trova il Vantaggio sul Bookmaker")
-    st.write("Confronta matematicamente la linea del sito di scommesse con la media stagionale reale.")
-
-    # Selettori compatti
+with tab_calc:
+    st.subheader("🧮 Calcolatore Vantaggio vs Bookmaker")
     cA, cB = st.columns(2)
-    player_calc = cA.selectbox("1. Seleziona Giocatore:", sorted(df_totale['Giocatore'].tolist()))
-    stat_calc = cB.selectbox("2. Mercato Scommessa:", ["Punti", "Assist", "Rimb", "3PT"])
-
-    media_reale = df_totale[df_totale['Giocatore'] == player_calc][stat_calc].values[0]
+    player = cA.selectbox("1. Giocatore:", sorted(df_totale['Giocatore'].tolist()))
+    stat = cB.selectbox("2. Mercato:", ["PTS_L10 (Punti Forma)", "AST_L10 (Assist Forma)", "REB_L10 (Rimb Forma)"])
     
-    # Mette in risalto la media reale
-    st.metric(f"Media Stagionale Reale ({stat_calc})", f"{media_reale:.1f}")
-
-    linea_book = st.number_input("3. Inserisci la Linea del Bookmaker (es. 25.5):", min_value=0.0, value=0.0, step=0.5)
-
-    if linea_book > 0:
-        margine = media_reale - linea_book
+    media = df_totale[df_totale['Giocatore'] == player][stat].values[0]
+    st.metric(f"Media Recente Reale ({stat})", f"{media:.1f}")
+    
+    linea = st.number_input("3. Linea Bookmaker:", 0.0, step=0.5)
+    if linea > 0:
+        margine = media - linea
         st.divider()
-        if margine > 1.5:
-            st.success(f"🔥 **SUPER VALORE!** La media è più alta della linea di **{margine:.1f}**. \n\n👉 **Giocata Suggerita: OVER**")
-        elif margine > 0:
-            st.info(f"👍 **LEGGERO VANTAGGIO:** La media supera la linea di **{margine:.1f}**. \n\n👉 **Giocata Suggerita: OVER**")
-        elif margine < -1.5:
-            st.error(f"❄️ **SOTTO MEDIA:** La media è più bassa della linea di **{abs(margine):.1f}**. \n\n👉 **Giocata Suggerita: UNDER**")
-        else:
-            st.warning("⚖️ **LINEA PERFETTA:** Il bookmaker ha impostato la linea quasi esattamente sulla media. Scommessa molto rischiosa.")
-
-
+        if margine > 1.5: st.success(f"🔥 **SUPER VALORE!** Media > Linea di **{margine:.1f}**. 👉 **Gioca OVER**")
+        elif margine < -1.5: st.error(f"❄️ **SOTTO MEDIA!** Media < Linea di **{abs(margine):.1f}**. 👉 **Gioca UNDER**")
+        else: st.warning("⚖️ **LINEA PERFETTA.** Troppo vicina alla media reale. Rischioso.")
